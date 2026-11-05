@@ -12,5 +12,6 @@ window.REVIEW_SETS = [
   { id: "earth_views", label: "Earth view: V02 to V23" },
   { id: "robot_loop", label: "Robot going for a stroll: V02 to V05" },
   { id: "growth_paper", label: "Growth: white paper, ten steps (test story)" },
-  { id: "paper_again", label: "Paper Again: one sheet, ten increments (particle model)" }
+  { id: "paper_again", label: "Paper Again: one sheet, ten increments (particle model)" },
+  { id: "caam", label: "CAAM, Exposition Park: research, plans, elevations, isometric (V0 to V10)" }
 ];
