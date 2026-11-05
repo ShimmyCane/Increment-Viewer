@@ -1,61 +1,59 @@
 # Increment Viewer: schematic
 
-Status: MVP (template). Built and checked with the Living Room Scene data.
+Status: database-backed. The reviews live in two Supabase projects and the page only reads them.
 
 ## Purpose
-A subject-neutral browser page for carefully reviewing a series of increments. It shows the versions as a stacked slideshow and lists each one in a running log, with what changed and what still needs work. The page knows nothing about the subject. A subject is just a data file.
+A subject-neutral browser page for carefully reviewing a series of increments. It shows the scenes as a stacked slideshow and lists each one in a running log, with what changed and what still needs work. The page knows nothing about the subject. A review is rows in a database.
+
+## Where the data lives
+Two Supabase projects, both with the same three tables:
+
+| Project | Holds | Project id |
+|---|---|---|
+| Architecture | architecture reviews (interiors, parks, aquariums, CAAM) | `xabgankckrcuhcgdolrg` |
+| Family | science, fun and misc reviews (planets, Earth, hawk, car, robot, paper) | `twvqvutrcobedvuhnzxq` |
+
+Tables (in each project):
+- `viewer_sets`: one row per review. `set_id` (name), `label` (drop-down text), `title`, `subtitle`, `sort_order`.
+- `viewer_scenes`: one row per scene. `set_id`, `position` (1-based order), `item` (JSON: `id`, `title`, `image`, `description`, `changes`, `gaps`, or `card`).
+- `viewer_rejected_scenes`: one row per review that was deleted in the viewer. `scene_id` (the set id), `rejected_at`.
+
+Row-level security is on. Public (anon) access is limited to:
+- read: all three tables;
+- insert: `viewer_rejected_scenes`, and only for a set id that exists in `viewer_sets`.
+
+Nothing else can be written from the page. Changing or removing a rejected row needs the database owner.
+
+## Files
+- `viewer.html`: the slideshow, running log, scene drop-down and Delete scene button.
+- `index.html`: the portfolio list, one card per visible review.
+- `viewer_db.js`: the only code that talks to the databases (`window.ViewerDB`): `loadSets`, `countScenes`, `loadScenes`, `reject`. The publishable keys are in this file.
+- `data/imported/`: the original data files. They were the source for the import and the page does not read them now.
+- `renders/`: pictures used by the Growth and Paper Again reviews.
 
 ## Use
-Open `viewer.html` in a browser. The page loads `data/living_room.js` by default.
-To view another review: `viewer.html?set=<name>`, which loads `data/<name>.js`.
-Only letters, digits and underscores are allowed in `<name>`.
+Open `viewer.html`. With no `?set=`, it opens the first visible review.
+- `viewer.html?set=<id>`: one review. An unknown or rejected id goes to the first visible review.
+- `&step=<n>`: open on step n (1-based). The slideshow then waits for Play. As you step, the address changes to the step you are on, so the link can be shared.
 
-## Data format (`data/<name>.js`)
-The file sets one global:
+## Delete scene (reject)
+The Delete scene button (upper right) rejects the review on screen. It asks first. "Don't warn me again for 2 minutes" skips the warning for two minutes in this browser.
 
-```js
-window.REVIEW_DATA = {
-  title: "Name shown in the header",
-  subtitle: "One line about the review",
-  items: [
-    {
-      id: "V1",                  // short label
-      title: "Short name",       // optional
-      image: "path/to/render.png", // relative to viewer.html
-      description: "What this version is",
-      changes: ["What changed", "..."],
-      gaps: ["Still to fix", "..."]   // optional
-    }
-  ]
-};
-```
+On confirm, the page inserts a row in `viewer_rejected_scenes` in that review's own database. The review is then removed from the drop-down and the index, and the viewer opens the next visible review with a note. If the database refuses the write, the review stays on screen and the page says why. Nothing is erased: the review and its scenes stay in the database, and a row in `viewer_rejected_scenes` can be deleted to bring a review back.
 
-Images are read relative to `viewer.html`. The Living Room data reaches its renders with `../Living Room Scene/renders/`.
+Rejected reviews are reviewed by hand now and then (see `todo.md`).
 
-## Open a project by link (like Make 3D's ?model=)
-- `viewer.html?set=<name>`: a data file in this folder (`data/<name>.js`).
-- `viewer.html?world=<id>`: a Growth world, loaded from `../Growth/worlds/<id>.js` and turned into items by `../Growth/js/growth_model.js` (`toReview`). Only letters, digits and underscores are allowed in `<id>`.
-- `&step=<n>` on either: open on step n (1-based). The slideshow then waits for Play. As you step, the address changes to the step you are on, so the link can be shared.
-- `#draft=<base64 of a world>`: an unsaved world sent from the Growth page. It is data, shown only as text. Pictures in a draft are ignored, so a link cannot pull images from elsewhere.
-- Items with no `image` but a `card` (`kicker`, `bars` of label, value, max, colour, and a `note`) show a state card. Without either, the frame says "No picture for this step."
-
-## Scene drop-down
-`data/sets.js` lists every review for the drop-down in the header (the Growth worlds from `../Growth/worlds/index.js` are added to it as "Growth: …"): `window.REVIEW_SETS = [{ id, label }]`. `id` is the data file name without `.js`; `label` is what the drop-down shows. If `sets.js` is missing, the drop-down is hidden and `?set=` still works.
-
-**One data file per project.** Each project appears once in the drop-down, and its full run (all versions, in order) lives in that one file. When a project gets new versions, add their items to its existing file and update the title and label. Do not start a new file for a later time span. Add a new file only for a new project.
-
-**Archive.** `data/archive/` keeps the old split pieces (for example the pre-merge `earth_views_v11.js`). They are not in the drop-down and cannot be opened with `?set=`, because set names may not contain folders.
-
-## Delete scene (hide)
-The Delete scene button (upper right) hides the scene you are on. It asks first and can mute the warning for 2 minutes. Hiding never deletes the data file. The hidden list is kept in the back end set in `data/sets.js` (`VIEWER_BACKEND.hiddenUrl`) and in this browser; `hidden_scenes.js` does the work, and the index page leaves hidden scenes out. A hidden scene can still be opened by its link. The `increment-scenes` skill (`.claude/skills/increment-scenes/SKILL.md`) saves and exports scenes to the project database.
+## Images
+A scene's `image` is a path relative to `viewer.html`. Most images in the imported reviews point at folders outside this repo (for example `../Make 3D/renders/...`). Those show "Image not found" until the pictures are added here or moved to a storage bucket.
 
 ## Behaviour
 - Slideshow: all views are stacked in one box and cross-fade. Back, Play/Pause and Next buttons. Dots jump to a view. Arrow keys work too. Auto-advance every 4 seconds.
 - Running log: every item in order, scrollable on its own. The active item is highlighted and kept in view. Clicking an item jumps to it.
 - Phone widths stack the log under the slideshow.
-- Missing image: shows the path in the frame instead of a broken image.
-- Data file missing: the subtitle says so.
+- A scene with no `image` but a `card` (`kicker`, `bars` of label, value, max, colour, and a `note`) shows a state card. Without either, the frame says "No picture for this step."
+- If a database cannot be read, the page says which one, and the other database still shows.
 
 ## Out of scope (for now)
-- No saving of notes or ratings in the browser. Data lives in the data file.
-- No build step. No dependencies.
+- Growth worlds (`../Growth/...`) are no longer loaded by the viewer. Their reviews, if wanted, need importing to a database.
+- Notes and ratings are not saved from the page.
+- No build step. No dependencies. The page needs internet access to the two Supabase projects.

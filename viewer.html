@@ -25,10 +25,19 @@
 
   header { position: relative; padding: 14px 170px 14px 16px; background: var(--sun); border-bottom: 3px solid var(--ink); }
   header h1 { margin: 0; font-size: 1.3rem; }
+  header p { margin: 4px 0 0; font-size: 0.95rem; }
   .delete-scene { position: absolute; top: 12px; right: 16px; min-height: 44px; padding: 0 14px; background: var(--card); }
   .delete-scene:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   .notice { margin: 6px 0 0; font-weight: bold; }
   .notice[hidden] { display: none; }
+  .picker { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: bold; flex-wrap: wrap; }
+  .picker select {
+    font: inherit; color: var(--ink); background: var(--card);
+    border: 3px solid var(--ink); border-radius: 14px;
+    min-height: 48px; padding: 0 12px; max-width: 100%; box-shadow: var(--shadow);
+  }
+  .picker select[hidden] { display: none; }
+
   dialog {
     width: min(92vw, 440px); padding: 18px; color: var(--ink); background: var(--card);
     border: 3px solid var(--ink); border-radius: 16px; box-shadow: var(--shadow);
@@ -40,14 +49,6 @@
   .mute input { width: 22px; height: 22px; margin: 0; }
   .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
   .dialog-actions .danger { background: #f4b6b6; }
-  header p { margin: 4px 0 0; font-size: 0.95rem; }
-  .picker { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: bold; flex-wrap: wrap; }
-  .picker select {
-    font: inherit; color: var(--ink); background: var(--card);
-    border: 3px solid var(--ink); border-radius: 14px;
-    min-height: 48px; padding: 0 12px; max-width: 100%; box-shadow: var(--shadow);
-  }
-  .picker select[hidden] { display: none; }
 
   .layout {
     display: grid;
@@ -100,7 +101,7 @@
   }
   .dot.on { background: var(--sun); }
 
-  /* State card: a step that has no picture shows its numbers as bars (Growth worlds) */
+  /* State card: a step that has no picture shows its numbers as bars */
   .card { width: 100%; height: 100%; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
   .card .kicker { font-weight: bold; font-size: 1.2rem; }
   .card .bar { display: grid; grid-template-columns: minmax(110px, 1.2fr) 3fr minmax(3ch, auto); gap: 10px; align-items: center; }
@@ -135,6 +136,8 @@
 
   /* Phone and narrow tablet: stack the panel under the slideshow */
   @media (max-width: 820px) {
+    header { padding-right: 16px; padding-top: 58px; }
+    .delete-scene { top: 10px; right: 12px; }
     .layout { grid-template-columns: 1fr; height: auto; min-height: 0; padding: 12px; }
     .frames { flex: none; height: 56vh; min-height: 280px; }
     .log { max-height: 60vh; }
@@ -148,7 +151,7 @@
   <p id="subtitle">Loading…</p>
   <p id="notice" class="notice" hidden></p>
   <label class="picker">Scene
-    <select id="picker" aria-label="Choose a scene"></select>
+    <select id="picker" aria-label="Choose a scene" hidden></select>
   </label>
 </header>
 
@@ -183,42 +186,46 @@
   </aside>
 </main>
 
+<script src="viewer_db.js"></script>
 <script>
 (function () {
-  // Template: pick a data file with ?set=<name>. It loads data/<name>.js,
-  // which sets window.REVIEW_DATA (see schematic.md for the format).
-  // A Growth world can also be opened by its name: ?world=<id> loads ../Growth/worlds/<id>.js.
-  // Add &step=<n> to open on one step (the slideshow then waits for you to press Play).
-  // A draft from the Growth page arrives in the address after # (#draft=...); it is data and is only shown as text.
+  // The reviews come from the Supabase databases (viewer_db.js). ?set=<id> opens one review; ?step=<n> opens on step n.
+  // Deleting a review flags it as rejected in its database and hides it from this page.
   var params = new URLSearchParams(location.search);
-  var set = params.get('set') || 'living_room';
-  if (!/^[a-z0-9_]+$/i.test(set)) set = 'living_room';
-  var worldId = params.get('world');
-  if (worldId !== null && !/^[a-z0-9_]+$/i.test(worldId)) worldId = null;
+  var requestedSet = params.get('set');
   var stepParam = parseInt(params.get('step'), 10);
-  var draftMatch = /(?:^|[#&])draft=([^&]+)/.exec(location.hash || '');
-  var draftText = draftMatch ? draftMatch[1] : null;
-  var worldMode = !!(worldId || draftText);
+  var INTERVAL_MS = 4000;
+  var NOTICE_KEY = 'incrementViewer.notice';
+  var MUTE_KEY = 'incrementViewer.muteDeleteWarningUntil';
+  var MUTE_MS = 2 * 60 * 1000;
 
   var el = function (id) { return document.getElementById(id); };
   var state = { index: 0, timer: null, playing: true, items: [] };
-  var INTERVAL_MS = 4000;
+  var sets = [];        // the reviews that are not rejected
+  var current = null;   // the review on screen
 
   function setText(node, text) { node.textContent = text; }
 
-  function start(data) {
-    if (!data || !Array.isArray(data.items) || data.items.length === 0) {
-      setText(el('subtitle'), 'The data file has no items.');
+  function showNotice(text) {
+    var n = el('notice');
+    if (text) { setText(n, text); n.hidden = false; } else { n.hidden = true; }
+  }
+
+  // ----- Slideshow -----
+
+  function start(title, subtitle, items) {
+    if (!items || items.length === 0) {
+      setText(el('subtitle'), 'This review has no scenes in the database.');
       return;
     }
-    state.items = data.items;
-    setText(el('title'), data.title || 'Increment Viewer');
-    setText(el('subtitle'), data.subtitle || '');
-    document.title = (data.title || 'Increment Viewer');
+    state.items = items;
+    setText(el('title'), title || 'Increment Viewer');
+    setText(el('subtitle'), subtitle || '');
+    document.title = title || 'Increment Viewer';
 
-    buildFrames(data.items);
-    buildDots(data.items);
-    buildLog(data.items);
+    buildFrames(items);
+    buildDots(items);
+    buildLog(items);
 
     el('prev').onclick = function () { go(state.index - 1); };
     el('next').onclick = function () { go(state.index + 1); };
@@ -232,19 +239,19 @@
       if (e.key === 'ArrowLeft') { go(state.index - 1); }
     });
 
-    var first = (stepParam >= 1 && stepParam <= data.items.length) ? stepParam - 1 : 0;
+    var first = (stepParam >= 1 && stepParam <= items.length) ? stepParam - 1 : 0;
     if (stepParam >= 1) { state.playing = false; setText(el('play'), '▶ Play'); }
     show(first);
     restartTimer();
   }
 
-  // Keep the address on the step you are looking at, so the link can be shared (like Make 3D's ?model=).
+  // Keep the address on the step you are looking at, so the link can be shared.
   function setStepUrl() {
     try {
       var u = new URL(location.href);
       u.searchParams.set('step', String(state.index + 1));
       history.replaceState(null, '', u.pathname + u.search + u.hash);
-    } catch (e) { /* file:// or blocked history: the viewer works, the link just stays as it was */ }
+    } catch (e) { /* blocked history: the viewer works, the link just stays as it was */ }
   }
   function go(i) { show(i); restartTimer(); setStepUrl(); }
 
@@ -290,6 +297,7 @@
 
   function buildFrames(items) {
     var box = el('frames');
+    box.replaceChildren();
     items.forEach(function (item, i) {
       var fig = document.createElement('figure');
       fig.className = 'frame';
@@ -318,6 +326,7 @@
 
   function buildDots(items) {
     var row = el('dots');
+    row.replaceChildren();
     items.forEach(function (item, i) {
       var b = document.createElement('button');
       b.className = 'dot';
@@ -346,6 +355,7 @@
 
   function buildLog(items) {
     var list = el('log');
+    list.replaceChildren();
     items.forEach(function (item, i) {
       var li = document.createElement('li');
       var btn = document.createElement('button');
@@ -410,156 +420,122 @@
     }
   }
 
-  // Scene drop-down: the list comes from data/sets.js, plus the Growth worlds from ../Growth/worlds/index.js.
-  // If both are missing, the drop-down stays hidden. A world is shown as "world:<id>".
-  var pickerPending = 2;
-  function pickerPartDone() { pickerPending -= 1; if (pickerPending === 0) buildPicker(); }
+  // ----- Scene drop-down and open -----
 
-  // Scenes that are not hidden (see hidden_scenes.js). A hidden scene can still be opened by its link.
-  var sceneEntries = [];
-  function isHiddenScene(id) { return !!(window.HiddenScenes && window.HiddenScenes.isHidden(id)); }
-
-  function sceneUrl(id) {
-    return location.pathname + (id.indexOf('world:') === 0 ? '?world=' + encodeURIComponent(id.slice(6)) : '?set=' + encodeURIComponent(id));
-  }
-
-  function currentSceneId() {
-    if (worldMode) return worldId ? 'world:' + worldId : null;   // a draft from the Growth page has no id, so it cannot be deleted
-    return set;
-  }
-
-  function updateDeleteButton() {
-    var btn = el('delete-scene');
-    btn.disabled = !(window.HiddenScenes && currentSceneId());
-  }
+  function sceneUrl(id) { return location.pathname + '?set=' + encodeURIComponent(id); }
 
   function buildPicker() {
     var sel = el('picker');
-    var entries = (window.REVIEW_SETS || []).slice();
-    (window.GROWTH_WORLD_LIST || []).forEach(function (w) { entries.push({ id: 'world:' + w.id, label: 'Growth: ' + w.label }); });
-    var current = worldMode ? 'world:' + (worldId || 'draft') : set;
-    entries = entries.filter(function (x) { return !isHiddenScene(x.id); });
-    if (entries.every(function (x) { return x.id !== current; }) && !isHiddenScene(current)) {
-      entries.push({ id: current, label: worldMode && !worldId ? 'Draft from the Growth page' : current.replace('world:', '') });
-    }
-    sceneEntries = entries;
-    updateDeleteButton();
-    showNotice();
-    if (!entries.length) { sel.hidden = true; return; }
-    entries.forEach(function (x) {
+    sel.replaceChildren();
+    if (!sets.length) { sel.hidden = true; return; }
+    sets.forEach(function (s) {
       var o = document.createElement('option');
-      o.value = x.id;
-      setText(o, x.label || x.id);
-      if (x.id === current) o.selected = true;
+      o.value = s.id;
+      setText(o, s.label || s.id);
+      if (current && s.id === current.id) o.selected = true;
       sel.appendChild(o);
     });
+    sel.hidden = false;
     sel.onchange = function () { location.href = sceneUrl(sel.value); };
   }
 
-  // A note from the last delete, shown once after the page reloads on the next scene.
-  var NOTICE_KEY = 'incrementViewer.notice';
-  function showNotice() {
-    var n = el('notice');
-    var text = '';
-    try { text = sessionStorage.getItem(NOTICE_KEY) || ''; sessionStorage.removeItem(NOTICE_KEY); } catch (e) { /* no storage: no note */ }
-    if (text) { setText(n, text); n.hidden = false; }
-  }
-
-  function deleteWarningText() {
-    var name = el('title').textContent || 'this scene';
-    return '"' + name + '" will be hidden from the scene list and this viewer. Its data file and pictures are kept, not erased.';
-  }
-
-  // Hide the scene, then open the next visible one with a note about where it was saved.
-  function hideCurrent(id) {
-    window.HiddenScenes.hide(id).then(function (where) {
-      var note = where === 'backend' ? 'Scene hidden. Saved to the back end.'
-        : where === 'local' ? 'Scene hidden in this browser only. No back end is set (VIEWER_BACKEND in data/sets.js).'
-        : 'Scene hidden in this browser. The back end did not save it, so it may show again on another device.';
-      var next = sceneEntries.filter(function (x) { return x.id !== id && !isHiddenScene(x.id); })[0];
-      if (!next) {
-        var n = el('notice');
-        setText(n, 'Scene hidden. No scenes are left to show. Hidden scenes stay in the back end.');
-        n.hidden = false;
-        el('delete-scene').disabled = true;
-        return;
-      }
-      try { sessionStorage.setItem(NOTICE_KEY, note); } catch (e) { /* the note is skipped */ }
-      location.href = sceneUrl(next.id);
+  function openSet(set) {
+    current = set;
+    el('delete-scene').disabled = false;
+    buildPicker();
+    ViewerDB.loadScenes(set).then(function (items) {
+      start(set.title, set.subtitle, items);
+    }).catch(function (err) {
+      setText(el('subtitle'), 'The scenes could not be loaded. ' + err.message);
     });
   }
 
-  function openDeleteDialog(id) {
+  // ----- Delete (reject) -----
+
+  function isMuted() {
+    try { return Date.now() < Number(localStorage.getItem(MUTE_KEY) || 0); } catch (e) { return false; }
+  }
+  function muteWarning() {
+    try { localStorage.setItem(MUTE_KEY, String(Date.now() + MUTE_MS)); } catch (e) { /* no storage: the warning shows again */ }
+  }
+
+  function openDeleteDialog() {
     var dlg = el('delete-dialog');
-    setText(el('delete-text'), deleteWarningText());
+    setText(el('delete-text'), '"' + current.title + '" will be flagged as rejected in the ' + current.db.name +
+      ' database and hidden from this viewer. Its scenes stay in the database.');
     el('delete-mute').checked = false;
     if (typeof dlg.showModal !== 'function') {
-      // Old browser without <dialog>: fall back to the built-in confirm box (no mute option).
-      if (window.confirm(deleteWarningText() + ' Delete it?')) hideCurrent(id);
+      if (window.confirm('Flag "' + current.title + '" as rejected and hide it? The scenes stay in the database.')) rejectCurrent();
       return;
     }
     dlg.showModal();
   }
 
+  function rejectCurrent() {
+    var set = current;
+    var btn = el('delete-scene');
+    btn.disabled = true;
+    showNotice('Flagging "' + set.title + '" as rejected…');
+    ViewerDB.reject(set).then(function () {
+      var rest = sets.filter(function (s) { return s.id !== set.id; });
+      if (!rest.length) {
+        el('frames').replaceChildren();
+        el('log').replaceChildren();
+        el('dots').replaceChildren();
+        setText(el('title'), 'No scenes left');
+        setText(el('subtitle'), '');
+        setText(el('cap-title'), '');
+        setText(el('cap-count'), '');
+        showNotice('"' + set.title + '" is flagged as rejected in the ' + set.db.name + ' database. No scenes are left to show.');
+        return;
+      }
+      try { sessionStorage.setItem(NOTICE_KEY, '"' + set.title + '" is flagged as rejected in the ' + set.db.name + ' database.'); } catch (e) { /* the note is skipped */ }
+      location.href = sceneUrl(rest[0].id);
+    }, function (err) {
+      btn.disabled = false;
+      showNotice('Not rejected. The database said no: ' + err.message + '. The scene is still shown.');
+    });
+  }
+
   el('delete-scene').onclick = function () {
-    var id = currentSceneId();
-    if (!id || !window.HiddenScenes) return;
-    if (window.HiddenScenes.isMuted()) { hideCurrent(id); return; }   // warning muted for 2 minutes
-    openDeleteDialog(id);
+    if (!current) return;
+    if (isMuted()) { rejectCurrent(); return; }   // warning muted for 2 minutes
+    openDeleteDialog();
   };
   el('delete-cancel').onclick = function () { el('delete-dialog').close(); };
   el('delete-confirm').onclick = function () {
-    var id = currentSceneId();
-    if (el('delete-mute').checked) window.HiddenScenes.mute();
+    if (el('delete-mute').checked) muteWarning();
     el('delete-dialog').close();
-    if (id) hideCurrent(id);
+    rejectCurrent();
   };
 
-  function loadScript(src, onload, onerror) {
-    var s = document.createElement('script');
-    s.src = src;
-    s.onload = onload;
-    s.onerror = onerror;
-    document.head.appendChild(s);
-  }
+  // ----- Start -----
 
-  // A Growth world becomes a review: one item per step, with a state card when there is no picture.
-  function startWorld(world, isDraft) {
-    var M = window.GrowthModel;
-    var problems = M.validate(world);
-    if (problems.length) { setText(el('subtitle'), 'This world cannot be shown: ' + problems[0]); return; }
-    var review = M.toReview(world);
-    if (isDraft) review.items.forEach(function (it) { delete it.image; });   // a link must not pull pictures from elsewhere
-    start(review);
-  }
+  // A note from the last delete, shown once after the page reloads on the next scene.
+  try {
+    var note = sessionStorage.getItem(NOTICE_KEY);
+    if (note) { sessionStorage.removeItem(NOTICE_KEY); showNotice(note); }
+  } catch (e) { /* no storage: no note */ }
 
-  function loadWorldMode() {
-    loadScript('../Growth/js/growth_model.js', function () {
-      if (draftText) {
-        try {
-          var world = JSON.parse(decodeURIComponent(escape(atob(draftText))));
-          startWorld(world, true);
-        } catch (e) { setText(el('subtitle'), 'The draft in this link could not be read.'); }
-        return;
-      }
-      loadScript('../Growth/worlds/' + worldId + '.js',
-        function () {
-          var w = window.GROWTH_WORLDS && window.GROWTH_WORLDS[worldId];
-          if (w) startWorld(w, false); else setText(el('subtitle'), 'The file ../Growth/worlds/' + worldId + '.js did not define that world.');
-        },
-        function () { setText(el('subtitle'), 'Could not load ../Growth/worlds/' + worldId + '.js. Check the ?world= name.'); });
-    }, function () { setText(el('subtitle'), 'Could not load ../Growth/js/growth_model.js.'); });
-  }
-
-  // sets.js sets the back end for hidden scenes, so hidden_scenes.js loads after it and the picker waits for the hidden list.
-  loadScript('data/sets.js', function () {
-    loadScript('hidden_scenes.js', function () { window.HiddenScenes.load().then(pickerPartDone); }, pickerPartDone);
-  }, pickerPartDone);
-  loadScript('../Growth/worlds/index.js', pickerPartDone, pickerPartDone);
-  if (worldMode) loadWorldMode();
-  else loadScript('data/' + set + '.js',
-    function () { start(window.REVIEW_DATA); },
-    function () { setText(el('subtitle'), 'Could not load data/' + set + '.js. Check the ?set= name.'); });
+  ViewerDB.loadSets().then(function (res) {
+    sets = res.sets;
+    if (res.errors.length) setText(el('subtitle'), 'Could not read a database: ' + res.errors.join('; '));
+    if (!sets.length) {
+      if (!res.errors.length) setText(el('subtitle'), 'No reviews to show.');
+      el('delete-scene').disabled = true;
+      buildPicker();
+      return;
+    }
+    var pick = sets.filter(function (s) { return s.id === requestedSet; })[0] || sets[0];
+    if (pick.id !== requestedSet) {
+      // Unknown or rejected link: go to the first review that is shown.
+      location.replace(sceneUrl(pick.id) + (stepParam >= 1 ? '&step=' + stepParam : ''));
+      return;
+    }
+    openSet(pick);
+  }).catch(function (err) {
+    setText(el('subtitle'), 'The reviews could not be loaded. ' + err.message);
+  });
 })();
 </script>
 </body>
