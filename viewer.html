@@ -441,9 +441,9 @@
 
   function openSet(set) {
     current = set;
-    el('delete-scene').disabled = false;
     buildPicker();
     ViewerDB.loadScenes(set).then(function (items) {
+      el('delete-scene').disabled = false;   // only once a review is on screen
       start(set.title, set.subtitle, items);
     }).catch(function (err) {
       setText(el('subtitle'), 'The scenes could not be loaded. ' + err.message);
