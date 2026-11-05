@@ -23,8 +23,23 @@
   html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, sans-serif; }
   body { min-height: 100vh; }
 
-  header { padding: 14px 16px; background: var(--sun); border-bottom: 3px solid var(--ink); }
+  header { position: relative; padding: 14px 170px 14px 16px; background: var(--sun); border-bottom: 3px solid var(--ink); }
   header h1 { margin: 0; font-size: 1.3rem; }
+  .delete-scene { position: absolute; top: 12px; right: 16px; min-height: 44px; padding: 0 14px; background: var(--card); }
+  .delete-scene:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+  .notice { margin: 6px 0 0; font-weight: bold; }
+  .notice[hidden] { display: none; }
+  dialog {
+    width: min(92vw, 440px); padding: 18px; color: var(--ink); background: var(--card);
+    border: 3px solid var(--ink); border-radius: 16px; box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(20, 18, 24, 0.5); }
+  dialog h2 { margin: 0 0 8px; font-size: 1.2rem; }
+  dialog p { margin: 0 0 12px; }
+  .mute { display: flex; align-items: center; gap: 10px; font-weight: bold; min-height: 44px; margin-bottom: 12px; }
+  .mute input { width: 22px; height: 22px; margin: 0; }
+  .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .dialog-actions .danger { background: #f4b6b6; }
   header p { margin: 4px 0 0; font-size: 0.95rem; }
   .picker { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: bold; flex-wrap: wrap; }
   .picker select {
@@ -128,12 +143,24 @@
 </head>
 <body>
 <header>
+  <button type="button" id="delete-scene" class="delete-scene" disabled>Delete scene</button>
   <h1 id="title">Increment Viewer</h1>
   <p id="subtitle">Loading…</p>
+  <p id="notice" class="notice" hidden></p>
   <label class="picker">Scene
     <select id="picker" aria-label="Choose a scene"></select>
   </label>
 </header>
+
+<dialog id="delete-dialog" aria-labelledby="delete-title">
+  <h2 id="delete-title">Delete this scene?</h2>
+  <p id="delete-text"></p>
+  <label class="mute"><input type="checkbox" id="delete-mute"> Don't warn me again for 2 minutes</label>
+  <div class="dialog-actions">
+    <button type="button" id="delete-cancel">Cancel</button>
+    <button type="button" id="delete-confirm" class="danger">Delete scene</button>
+  </div>
+</dialog>
 
 <main class="layout">
   <section class="stage" aria-label="Slideshow">
@@ -388,13 +415,37 @@
   var pickerPending = 2;
   function pickerPartDone() { pickerPending -= 1; if (pickerPending === 0) buildPicker(); }
 
+  // Scenes that are not hidden (see hidden_scenes.js). A hidden scene can still be opened by its link.
+  var sceneEntries = [];
+  function isHiddenScene(id) { return !!(window.HiddenScenes && window.HiddenScenes.isHidden(id)); }
+
+  function sceneUrl(id) {
+    return location.pathname + (id.indexOf('world:') === 0 ? '?world=' + encodeURIComponent(id.slice(6)) : '?set=' + encodeURIComponent(id));
+  }
+
+  function currentSceneId() {
+    if (worldMode) return worldId ? 'world:' + worldId : null;   // a draft from the Growth page has no id, so it cannot be deleted
+    return set;
+  }
+
+  function updateDeleteButton() {
+    var btn = el('delete-scene');
+    btn.disabled = !(window.HiddenScenes && currentSceneId());
+  }
+
   function buildPicker() {
     var sel = el('picker');
     var entries = (window.REVIEW_SETS || []).slice();
     (window.GROWTH_WORLD_LIST || []).forEach(function (w) { entries.push({ id: 'world:' + w.id, label: 'Growth: ' + w.label }); });
-    if (!entries.length) { sel.hidden = true; return; }
     var current = worldMode ? 'world:' + (worldId || 'draft') : set;
-    if (entries.every(function (x) { return x.id !== current; })) entries.push({ id: current, label: worldMode && !worldId ? 'Draft from the Growth page' : current.replace('world:', '') });
+    entries = entries.filter(function (x) { return !isHiddenScene(x.id); });
+    if (entries.every(function (x) { return x.id !== current; }) && !isHiddenScene(current)) {
+      entries.push({ id: current, label: worldMode && !worldId ? 'Draft from the Growth page' : current.replace('world:', '') });
+    }
+    sceneEntries = entries;
+    updateDeleteButton();
+    showNotice();
+    if (!entries.length) { sel.hidden = true; return; }
     entries.forEach(function (x) {
       var o = document.createElement('option');
       o.value = x.id;
@@ -402,11 +453,67 @@
       if (x.id === current) o.selected = true;
       sel.appendChild(o);
     });
-    sel.onchange = function () {
-      var v = sel.value;
-      location.href = location.pathname + (v.indexOf('world:') === 0 ? '?world=' + encodeURIComponent(v.slice(6)) : '?set=' + encodeURIComponent(v));
-    };
+    sel.onchange = function () { location.href = sceneUrl(sel.value); };
   }
+
+  // A note from the last delete, shown once after the page reloads on the next scene.
+  var NOTICE_KEY = 'incrementViewer.notice';
+  function showNotice() {
+    var n = el('notice');
+    var text = '';
+    try { text = sessionStorage.getItem(NOTICE_KEY) || ''; sessionStorage.removeItem(NOTICE_KEY); } catch (e) { /* no storage: no note */ }
+    if (text) { setText(n, text); n.hidden = false; }
+  }
+
+  function deleteWarningText() {
+    var name = el('title').textContent || 'this scene';
+    return '"' + name + '" will be hidden from the scene list and this viewer. Its data file and pictures are kept, not erased.';
+  }
+
+  // Hide the scene, then open the next visible one with a note about where it was saved.
+  function hideCurrent(id) {
+    window.HiddenScenes.hide(id).then(function (where) {
+      var note = where === 'backend' ? 'Scene hidden. Saved to the back end.'
+        : where === 'local' ? 'Scene hidden in this browser only. No back end is set (VIEWER_BACKEND in data/sets.js).'
+        : 'Scene hidden in this browser. The back end did not save it, so it may show again on another device.';
+      var next = sceneEntries.filter(function (x) { return x.id !== id && !isHiddenScene(x.id); })[0];
+      if (!next) {
+        var n = el('notice');
+        setText(n, 'Scene hidden. No scenes are left to show. Hidden scenes stay in the back end.');
+        n.hidden = false;
+        el('delete-scene').disabled = true;
+        return;
+      }
+      try { sessionStorage.setItem(NOTICE_KEY, note); } catch (e) { /* the note is skipped */ }
+      location.href = sceneUrl(next.id);
+    });
+  }
+
+  function openDeleteDialog(id) {
+    var dlg = el('delete-dialog');
+    setText(el('delete-text'), deleteWarningText());
+    el('delete-mute').checked = false;
+    if (typeof dlg.showModal !== 'function') {
+      // Old browser without <dialog>: fall back to the built-in confirm box (no mute option).
+      if (window.confirm(deleteWarningText() + ' Delete it?')) hideCurrent(id);
+      return;
+    }
+    dlg.showModal();
+  }
+
+  el('delete-scene').onclick = function () {
+    var id = currentSceneId();
+    if (!id || !window.HiddenScenes) return;
+    if (window.HiddenScenes.isMuted()) { hideCurrent(id); return; }   // warning muted for 2 minutes
+    openDeleteDialog(id);
+  };
+  el('delete-cancel').onclick = function () { el('delete-dialog').close(); };
+  el('delete-confirm').onclick = function () {
+    var id = currentSceneId();
+    if (el('delete-mute').checked) window.HiddenScenes.mute();
+    el('delete-dialog').close();
+    if (id) hideCurrent(id);
+  };
 
   function loadScript(src, onload, onerror) {
     var s = document.createElement('script');
@@ -444,7 +551,10 @@
     }, function () { setText(el('subtitle'), 'Could not load ../Growth/js/growth_model.js.'); });
   }
 
-  loadScript('data/sets.js', pickerPartDone, pickerPartDone);
+  // sets.js sets the back end for hidden scenes, so hidden_scenes.js loads after it and the picker waits for the hidden list.
+  loadScript('data/sets.js', function () {
+    loadScript('hidden_scenes.js', function () { window.HiddenScenes.load().then(pickerPartDone); }, pickerPartDone);
+  }, pickerPartDone);
   loadScript('../Growth/worlds/index.js', pickerPartDone, pickerPartDone);
   if (worldMode) loadWorldMode();
   else loadScript('data/' + set + '.js',

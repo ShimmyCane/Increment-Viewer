@@ -46,6 +46,9 @@ Images are read relative to `viewer.html`. The Living Room data reaches its rend
 
 **Archive.** `data/archive/` keeps the old split pieces (for example the pre-merge `earth_views_v11.js`). They are not in the drop-down and cannot be opened with `?set=`, because set names may not contain folders.
 
+## Delete scene (hide)
+The Delete scene button (upper right) hides the scene you are on. It asks first and can mute the warning for 2 minutes. Hiding never deletes the data file. The hidden list is kept in the back end set in `data/sets.js` (`VIEWER_BACKEND.hiddenUrl`) and in this browser; `hidden_scenes.js` does the work, and the index page leaves hidden scenes out. A hidden scene can still be opened by its link. The `increment-scenes` skill (`.claude/skills/increment-scenes/SKILL.md`) saves and exports scenes to the project database.
+
 ## Behaviour
 - Slideshow: all views are stacked in one box and cross-fade. Back, Play/Pause and Next buttons. Dots jump to a view. Arrow keys work too. Auto-advance every 4 seconds.
 - Running log: every item in order, scrollable on its own. The active item is highlighted and kept in view. Clicking an item jumps to it.
