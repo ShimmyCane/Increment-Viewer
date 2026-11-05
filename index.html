@@ -39,6 +39,7 @@
 </header>
 <main id="list" aria-live="polite"></main>
 
+<script src="hidden_scenes.js"></script>
 <script>
 (function () {
   // Portfolio: one card per review in data/sets.js. Each card reads its data file and checks which
@@ -105,8 +106,13 @@
     return;
   }
 
+  // The back end for hidden scenes is set in data/sets.js (VIEWER_BACKEND); hidden_scenes.js reads it.
   loadText('data/sets.js').then(function (src) {
-    var sets = evalData(src).REVIEW_SETS || [];
+    var all = evalData(src).REVIEW_SETS || [];
+    return Promise.resolve(window.HiddenScenes ? window.HiddenScenes.load() : null).then(function () {
+      return window.HiddenScenes ? window.HiddenScenes.visible(all) : all;
+    });
+  }).then(function (sets) {
     setText(intro, sets.length + ' reviews. Pick one to open it in the viewer.');
     return Promise.all(sets.map(function (set) {
       return loadText('data/' + encodeURIComponent(set.id) + '.js').then(function (text) {
