@@ -25,38 +25,24 @@ For each scene, collect:
 
 Keep the order of the scenes. The first scene is the first step.
 
-## 2. Pick the database
+## 2. The database
 
-Two Supabase projects are connected here. Use the one the user chose. If the user has not chosen, ask once:
+The scenes live in the **Architecture** Supabase project (`xabgankckrcuhcgdolrg`, us-east-2). The family project is not used for scenes.
 
-- **Architecture** (`xabgankckrcuhcgdolrg`, us-east-2): practice and Make 3D data (`m3d_scenes` holds saved 3-D scene bundles).
-- **Family** (`twvqvutrcobedvuhnzxq`, us-west-2): the family apps. Its `app_table_registry` lists which app owns which table.
-
-Before writing, check the target. Never write to a table another app owns. Add the new table to the database's `app_table_registry` (Family) or `table_index` (Architecture) with the project name, so other apps can see who owns it.
+Before writing, check the target. Never write to a table another app owns. Register any new table in `table_index` (Architecture) with the project name `Increment Viewer`, so other apps can see who owns it.
 
 ## 3. Save to the database
 
-Use one set of rows per review. Table and columns (this proposal is not created yet; create it only after the user agrees):
+Tables (created in the Architecture project, RLS on, no public policies):
 
-```sql
-create table if not exists viewer_scenes (
-  set_id    text    not null,           -- the data file name, e.g. living_room
-  position  integer not null,           -- 1-based order
-  item      jsonb   not null,           -- one scene exactly as in the data file
-  updated_at timestamptz not null default now(),
-  primary key (set_id, position)
-);
+- `viewer_scenes(set_id text, position integer, item jsonb, updated_at timestamptz)`, primary key `(set_id, position)`. One row per scene. `set_id` is the data file name (for example `living_room`), `position` is the 1-based order, `item` is the scene exactly as in the data file.
+- `viewer_rejected_scenes(scene_id text primary key, rejected_at timestamptz)`. A scene the user deleted in the viewer. `scene_id` is the set id, or `world:<id>` for a Growth world. Hiding never erases the scene; this table is only the list of hidden scenes.
 
-create table if not exists viewer_hidden_scenes (
-  scene_id  text primary key,           -- e.g. living_room or world:growth_paper
-  hidden_at timestamptz not null default now()
-);
+Use one set of rows per review. Write the scenes as one batch: delete the old rows for `set_id`, then insert the new ones. Show the user the row count before and after.
 
-alter table viewer_scenes enable row level security;
-alter table viewer_hidden_scenes enable row level security;
-```
+RLS is on, so the viewer's public key cannot read or write these tables by itself. Access goes through an edge function or a policy the user agrees to. Do not open them to everyone without asking.
 
-RLS is on, so the viewer's public key cannot read or write these tables by itself. Add a policy or an edge function that matches how the user wants access controlled. Do not open them to everyone without asking.
+Rejected scenes are reviewed by hand now and then (see `todo.md`). Do not delete rows from `viewer_rejected_scenes` unless the user asks.
 
 Write the scenes as one batch: delete the old rows for `set_id`, then insert the new ones. Show the user the row count before and after.
 
