@@ -10,6 +10,8 @@ A subject-neutral page to review a series of increments: a stacked slideshow and
 - Known gap: the Adventure Coaster V16 render (`Make 3D/renders/adventure_park_compact/v16.png`) does not exist yet, so its frame shows the path.
 - Unverified: iPad and other browsers.
 
+- Internal note: copied renders into this repo. `renders/growth/` holds the 10 Growth renders (`growth_3d_01..10.png`) from ShimmyCane/growth `renders/`. `renders/paper_again/` holds the 10 Paper Again renders (`paper_again_01..10.png`) from ShimmyCane/growth `Paper Again/renders/`. `data/growth_paper.js` and `data/paper_again.js` now point there. Living Room Scene and Make 3D renders are not copied yet (Make-3D repo attach was denied).
+
 ## Next steps
 - Render Adventure Coaster V16 in Make 3D, or drop the item from its data file.
 - Add a data file only for a new project, not a new time span of an existing one.
