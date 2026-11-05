@@ -1,9 +1,8 @@
 # Increment Viewer: Claude pointer
 
-Purpose: a subject-neutral template for reviewing a series of increments (slideshow plus running log). It is reused for any subject by adding a data file.
+Purpose: a subject-neutral template for reviewing a series of increments (slideshow plus running log). The reviews are rows in two Supabase projects; the page reads them.
 
-- Design and data format: `schematic.md`
-- Open: `viewer.html` (default data: `data/living_room.js`), or `viewer.html?set=<name>`
-- Add a review: copy `data/living_room.js`, change the items, and open with `?set=<name>`
-- Growth worlds: `viewer.html?world=<id>&step=<n>` loads `../Growth/worlds/<id>.js` (see `schematic.md`). A step with no picture shows a state card.
-- Keep the viewer generic. Subject-specific text belongs in the data file only.
+- Design and data: `schematic.md`
+- Open: `viewer.html` (first visible review) or `viewer.html?set=<id>`
+- Add a review: save it to the Architecture or Family database with the `increment-scenes` skill (`.claude/skills/increment-scenes/SKILL.md`). No file change is needed.
+- Keep the viewer generic. Subject-specific text belongs in the database rows only. The database access lives in `viewer_db.js`.

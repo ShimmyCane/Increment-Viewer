@@ -18,7 +18,6 @@
   header h1 { margin: 0; font-size: 1.4rem; }
   header p { margin: 6px 0 0; }
   main { padding: 16px; display: grid; gap: 14px; max-width: 980px; margin: 0 auto; }
-  .status { font-weight: bold; }
   .card {
     display: grid; gap: 6px; background: var(--card); color: var(--ink); text-decoration: none;
     border: 3px solid var(--ink); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px;
@@ -26,10 +25,8 @@
   .card:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
   .card .name { font-weight: bold; font-size: 1.05rem; }
   .card .meta { font-size: 0.92rem; }
-  .bar { height: 14px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--mint); border-right: 2px solid var(--ink); }
+  .card .db { font-size: 0.85rem; opacity: 0.8; }
   .none { font-style: italic; opacity: 0.8; }
-  .note { font-size: 0.9rem; opacity: 0.85; }
 </style>
 </head>
 <body>
@@ -39,104 +36,52 @@
 </header>
 <main id="list" aria-live="polite"></main>
 
-<script src="hidden_scenes.js"></script>
+<script src="viewer_db.js"></script>
 <script>
 (function () {
-  // Portfolio: one card per review in data/sets.js. Each card reads its data file and checks which
-  // pictures exist, so the counts update when renders are added. Needs to be served over http(s),
-  // because the page reads the data files; opened as a file, it shows a short message instead.
+  // Portfolio: one card per review in the Architecture and Family databases (viewer_db.js).
+  // Rejected reviews are left out, the same as in the viewer.
   var list = document.getElementById('list');
   var intro = document.getElementById('intro');
 
   function setText(node, text) { node.textContent = text; }
 
-  function loadText(url) {
-    return fetch(url, { cache: 'no-cache' }).then(function (r) {
-      if (!r.ok) throw new Error(url + ' ' + r.status);
-      return r.text();
-    });
-  }
-
-  // Each data file sets window.REVIEW_DATA (or window.REVIEW_SETS). Run it against a private window object.
-  function evalData(src) {
-    var w = {};
-    new Function('window', src)(w);
-    return w;
-  }
-
-  function imageExists(src) {
-    return fetch(src, { method: 'HEAD', cache: 'no-cache' }).then(function (r) { return r.ok; }, function () { return false; });
-  }
-
-  function card(set, data, pictures) {
-    var total = data.items.length;
-    var withImage = data.items.filter(function (i) { return i.image; }).length;
+  function card(set, count) {
     var a = document.createElement('a');
     a.className = 'card';
     a.href = 'viewer.html?set=' + encodeURIComponent(set.id);
 
     var name = document.createElement('div');
     name.className = 'name';
-    setText(name, set.label || data.title || set.id);
+    setText(name, set.label || set.title || set.id);
     a.appendChild(name);
 
     var meta = document.createElement('div');
     meta.className = 'meta';
-    setText(meta, total + (total === 1 ? ' step' : ' steps') + ' · ' + pictures + ' of ' + withImage + ' pictures in this repo');
+    setText(meta, count + (count === 1 ? ' step' : ' steps'));
     a.appendChild(meta);
 
-    var bar = document.createElement('div');
-    bar.className = 'bar';
-    var fill = document.createElement('i');
-    fill.style.width = (withImage ? 100 * pictures / withImage : 0) + '%';
-    bar.appendChild(fill);
-    a.appendChild(bar);
-
-    if (pictures === 0) {
-      var none = document.createElement('div');
-      none.className = 'none';
-      setText(none, 'No pictures copied yet. The viewer will show the path for each step.');
-      a.appendChild(none);
-    }
+    var db = document.createElement('div');
+    db.className = 'db';
+    setText(db, 'From the ' + set.db.name + ' database');
+    a.appendChild(db);
     return a;
   }
 
-  if (location.protocol === 'file:') {
-    setText(intro, 'Open this page from a web address (GitHub Pages or a local server). It cannot read the data files from a file.');
-    return;
-  }
-
-  // The back end for hidden scenes is set in data/sets.js (VIEWER_BACKEND); hidden_scenes.js reads it.
-  loadText('data/sets.js').then(function (src) {
-    var all = evalData(src).REVIEW_SETS || [];
-    return Promise.resolve(window.HiddenScenes ? window.HiddenScenes.load() : null).then(function () {
-      return window.HiddenScenes ? window.HiddenScenes.visible(all) : all;
+  Promise.all([window.ViewerDB.loadSets(), window.ViewerDB.countScenes()]).then(function (res) {
+    var found = res[0];
+    var counts = res[1];
+    setText(intro, found.sets.length + ' reviews. Pick one to open it in the viewer.');
+    found.errors.forEach(function (msg) {
+      var p = document.createElement('div');
+      p.className = 'none';
+      setText(p, 'Could not read a database: ' + msg);
+      list.appendChild(p);
     });
-  }).then(function (sets) {
-    setText(intro, sets.length + ' reviews. Pick one to open it in the viewer.');
-    return Promise.all(sets.map(function (set) {
-      return loadText('data/' + encodeURIComponent(set.id) + '.js').then(function (text) {
-        var data = evalData(text).REVIEW_DATA;
-        var checks = (data && data.items || []).filter(function (i) { return i.image; }).map(function (i) { return imageExists(i.image); });
-        return Promise.all(checks).then(function (found) {
-          var pictures = found.filter(Boolean).length;
-          return { set: set, data: data, pictures: pictures };
-        });
-      }).catch(function () { return { set: set, data: null, pictures: 0 }; });
-    }));
-  }).then(function (rows) {
-    rows.forEach(function (row) {
-      if (!row.data) {
-        var a = document.createElement('div');
-        a.className = 'card';
-        setText(a, (row.set.label || row.set.id) + ': data file could not be read.');
-        list.appendChild(a);
-        return;
-      }
-      list.appendChild(card(row.set, row.data, row.pictures));
-    });
-  }).catch(function () {
-    setText(intro, 'The list of reviews could not be read (data/sets.js).');
+    found.sets.forEach(function (set) { list.appendChild(card(set, counts[set.id] || 0)); });
+    if (!found.sets.length && !found.errors.length) setText(intro, 'No reviews to show.');
+  }).catch(function (err) {
+    setText(intro, 'The list of reviews could not be loaded. ' + err.message);
   });
 })();
 </script>

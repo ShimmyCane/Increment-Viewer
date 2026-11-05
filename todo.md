@@ -1,11 +1,14 @@
 # To do
 
-## Review rejected scenes now and then
-Scenes deleted in the Increment Viewer are kept in the Architecture database table `viewer_rejected_scenes` (hidden, not erased).
-Every month or so, open that table and decide, scene by scene:
+## Review rejected reviews now and then
+A review deleted in the Increment Viewer is flagged in its own database's `viewer_rejected_scenes` table (Architecture or Family). It is hidden, not erased.
+Every month or so, open that table in each project and decide, review by review:
 
-- **Bring back:** delete the row, so the scene shows again.
-- **Remove for good:** delete the scene's rows in `viewer_scenes` and the data file in `data/`, then remove its line in `data/sets.js`.
+- **Bring back:** delete the row, so the review shows again.
+- **Remove for good:** delete its rows in `viewer_scenes`, then its row in `viewer_sets` and its row in `viewer_rejected_scenes`.
 - **Keep:** leave the row.
 
 Last reviewed: never
+
+## Pictures
+Most scene images point at folders outside this repo (`../Make 3D/renders/...`, `../Quick-Detail/...`), so they show "Image not found" in the viewer. Decide where the pictures should live (the repo `renders/` folder, or a Supabase storage bucket) and move them, then update the `image` paths in `viewer_scenes`.
