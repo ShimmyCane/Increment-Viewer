@@ -7,6 +7,7 @@ A subject-neutral page to review a series of increments: a stacked slideshow and
 - `viewer.html` plus one data file per project in `data/`, listed once each in `data/sets.js`.
 - Merged the split Earth (V02 to V23), planet (V02 to V06) and Adventure Coaster Park (V01 to V16) files into one file each. The nine originals are in `data/archive/`.
 - Verified in headless Chromium: ten drop-down entries, no page errors, and log entry counts of 22, 40 and 16 matching the data.
+- Added `data/caam.js` (CAAM, Exposition Park, V0 to V10): renders read from `../Quick-Detail/docs/caam/`. Verified in headless Chromium: 11 images load, no page errors.
 - Known gap: the Adventure Coaster V16 render (`Make 3D/renders/adventure_park_compact/v16.png`) does not exist yet, so its frame shows the path.
 - Unverified: iPad and other browsers.
 
