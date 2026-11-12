@@ -29,7 +29,7 @@ Nothing else can be written from the page. Changing or removing a rejected row n
 - `index.html`: the portfolio list, one card per visible review.
 - `viewer_db.js`: the only code that talks to the databases (`window.ViewerDB`): `loadSets`, `countScenes`, `loadScenes`, `reject`. The publishable keys are in this file.
 - `data/imported/`: the original data files. They were the source for the import and the page does not read them now.
-- `renders/`: pictures used by the Growth and Paper Again reviews.
+- `renders/`: pictures used by the Growth, Paper Again and Visualize Image reviews.
 
 ## Use
 Open `viewer.html`. With no `?set=`, it opens the first visible review.
