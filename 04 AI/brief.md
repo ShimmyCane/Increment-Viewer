@@ -17,3 +17,5 @@ A subject-neutral page to review a series of increments: a stacked slideshow and
 - Render Adventure Coaster V16 in Make 3D, or drop the item from its data file.
 - Add a data file only for a new project, not a new time span of an existing one.
 - Consider a link from the root `index.html` Architecture section (added in this change).
+
+- Added three reviews to the Family database (`vi_kitchen_p1`, `_p2`, `_p3`): the Visualize Image process run three times on one photo (7 scenes each). Images are in `renders/visualize_image/p1..p3/` (flat drawings only; the source photo stays private in the Learning-to-Draw repo). Source and engine: ShimmyCane/Learning-to-Draw, `visualize-image/`.
